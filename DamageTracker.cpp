@@ -8,9 +8,9 @@ void DamageTracker::initQueue()
     queue.size = 0;
 }
 
-void DamageTracker::enqueue(int damage, double time)
+void DamageTracker::enqueue(DamageType type, int damage, double time, bool critical)
 {
-    Hit* newHit { new Hit(damage, time) };
+    Hit* newHit { new Hit(type, damage, time, critical) };
     if(newHit == nullptr) return;
 
     if(queue.tail == nullptr)
@@ -45,7 +45,7 @@ void DamageTracker::copyQueue(const DamageTracker& other)
 {
     for(Hit* curr { other.queue.head }; curr != nullptr; curr = curr->next)
     {
-        enqueue(curr->damage, curr->time);
+        enqueue(curr->type, curr->damage, curr->time, curr->critical);
     }
 }
 
@@ -81,9 +81,9 @@ DamageTracker::~DamageTracker()
     clearQueue();
 }
 
-void DamageTracker::addHit(int damage, double time, bool critical)
+void DamageTracker::addHit(DamageType type, int damage, double time, bool critical)
 {
-    Hit* newHit { new Hit(critical ? damage * 2 : damage, time) };
+    Hit* newHit { new Hit(type, damage, time, critical) };
     if(newHit == nullptr) return;
 
     if(queue.head == nullptr) queue.head = newHit;
@@ -93,17 +93,48 @@ void DamageTracker::addHit(int damage, double time, bool critical)
     queue.size++;
 }
 
+void DamageTracker::removeHitsBefore(double time)
+{
+    if(queue.head == nullptr) return;
+
+    Hit* curr { queue.head };
+
+    while(curr != nullptr && curr->next != nullptr)
+    {
+        if(curr->time < time) //head durumu icin
+        {
+            dequeue();
+        }
+
+        else if(curr->next->time < time)
+        {
+            Hit* willBeDeleted { curr->next };
+            curr->next = willBeDeleted->next;
+            delete willBeDeleted;
+            --queue.size;
+        }
+
+        curr = curr->next;
+
+    }
+}
+
+int DamageTracker::actualDamage(const Hit& h) const
+{
+    return h.critical ? h.damage * 2 : h.damage; 
+}
+
 int DamageTracker::totalDamage() const
 {
     if(queue.head == nullptr) return 0;
 
-    Hit* temp { queue.head };
+    Hit* curr { queue.head };
     int damage { };
 
-    while(temp != nullptr)
+    while(curr != nullptr)
     {
-        damage += temp->damage;
-        temp = temp->next;
+        damage += actualDamage(*curr);
+        curr = curr->next;
     }
 
     return damage;
@@ -111,20 +142,23 @@ int DamageTracker::totalDamage() const
 
 double DamageTracker::avgDamage() const
 {
-    return static_cast<double>(totalDamage()) / static_cast<double>(queue.size);
+    if(queue.size == 0) return 0.0;
+
+    return static_cast<double>(totalDamage()) / queue.size;
 }
 
 int DamageTracker::highestDamage() const
 {
     if(queue.head == nullptr) return 0;
 
-    Hit* temp { queue.head->next };
+    Hit* curr { queue.head->next };
     int max { queue.head->damage };
 
-    while(temp != nullptr)
+    while(curr != nullptr)
     {
-        if(max < temp->damage) max = temp->damage;
-        temp = temp->next;
+        int damage { actualDamage(*curr) };
+        if(max < damage) max = damage;
+        curr = curr->next;
     }
 
     return max;
@@ -138,11 +172,79 @@ int DamageTracker::comboDamage(double currentTime, double comboWindow) const
 
     while(curr != nullptr)
     {
-        if(curr->time >= currentTime - comboWindow && curr->time <= 10.0) combo += curr->damage;
+        if(curr->time >= currentTime - comboWindow && curr->time <= 10.0) combo += actualDamage(*curr);
         curr = curr->next;
     }
 
     return combo;
+}
+
+int DamageTracker::damageByType(DamageType type) const
+{
+    Hit* curr { queue.head };
+    int total {};
+
+    while(curr != nullptr)
+    {
+        if(curr->type == type) total += actualDamage(*curr);
+        curr = curr->next;
+    }
+
+    return total;
+}
+
+double DamageTracker::criticalRate() const
+{
+    Hit* curr { queue.head };
+
+    double criticalCount {};
+
+    while(curr != nullptr)
+    {
+        if(curr->critical) ++criticalCount;
+        curr = curr->next;
+    }
+
+    return criticalCount / static_cast<double>(queue.size);
+}
+
+/*
+int DamageTracker::highestCombo(double window) const
+{
+
+}
+*/
+
+std::string DamageTracker::damageTypeToString(DamageType t) const
+{
+    switch(t)
+    {
+        case DamageType::PHYSICAL: return "Physical";
+        case DamageType::FIRE: return "Fire";
+        case DamageType::ICE: return "Ice";
+        case DamageType::POISON: return "Poison";
+    }
+    
+    return "";
+}
+
+void DamageTracker::printAllHits() const
+{
+    Hit* curr { queue.head };
+
+    int i {};
+
+    while(curr != nullptr)
+    {
+        std::cout << "HIT " << ++i << '\n'; 
+        std::cout << "Damage Type: " << damageTypeToString(curr->type) << '\n';
+        std::cout << "Pure Damage: " << curr->damage << '\n';
+        std::cout << "Time: " << curr->time << '\n';
+        std::cout << "Is Critical: " << (curr->critical ? "Yes" : "No") << '\n';
+        std::cout << "Actual Damage: " << actualDamage(*curr) << "\n\n";
+        
+        curr = curr->next;
+    }
 }
 
 void DamageTracker::printTotalDamage() const
@@ -163,4 +265,9 @@ void DamageTracker::printHighestDamage() const
 void DamageTracker::printComboDamage(double currentTime, double comboWindow) const
 {
     std::cout << "Combo Damage: " << comboDamage(currentTime, comboWindow) << '\n';
+}
+
+void DamageTracker::printDamageByType(DamageType t) const
+{
+    std::cout << damageTypeToString(t) << " Damage Type: " << damageByType(t) << '\n';
 }
